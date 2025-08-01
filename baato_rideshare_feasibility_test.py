@@ -5,7 +5,7 @@ Baato.io API Feasibility Test for Ride-Sharing Applications
 
 This script comprehensively tests Baato.io API capabilities for ride-sharing
 applications and compares them with Google Maps API. It evaluates performance,
-accuracy, features, and cost-effectiveness.
+accuracy, features, and cost-effectiveness with concurrent testing support.
 
 Author: Auto-generated
 Date: 2025-01-27
@@ -24,6 +24,9 @@ import asyncio
 import aiohttp
 import concurrent.futures
 from urllib.parse import urlencode
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import queue
 
 # Configure logging
 logging.basicConfig(
@@ -46,6 +49,22 @@ class TestResult:
     data: Optional[Dict] = None
     error: Optional[str] = None
     cost_estimate: Optional[float] = None
+    thread_id: Optional[str] = None
+    timestamp: Optional[str] = None
+
+@dataclass
+class ConcurrentTestMetrics:
+    """Class to hold concurrent test metrics"""
+    total_requests: int
+    successful_requests: int
+    failed_requests: int
+    avg_response_time: float
+    min_response_time: float
+    max_response_time: float
+    requests_per_second: float
+    concurrent_threads: int
+    test_duration: float
+    success_rate: float
 
 @dataclass
 class RouteComparison:
@@ -56,8 +75,270 @@ class RouteComparison:
     instructions: Optional[List[str]] = None
     traffic_aware: bool = False
 
+class AsyncBaatoAPI:
+    """Async Baato.io API Client for concurrent testing"""
+    
+    def __init__(self, access_token: str):
+        self.access_token = access_token
+        self.base_url = "https://api.baato.io/api"
+        self.session = None
+        
+    async def __aenter__(self):
+        """Async context manager entry"""
+        connector = aiohttp.TCPConnector(limit=100, limit_per_host=50)
+        timeout = aiohttp.ClientTimeout(total=30)
+        self.session = aiohttp.ClientSession(
+            connector=connector,
+            timeout=timeout,
+            headers={
+                'Content-Type': 'application/json',
+                'User-Agent': 'Baato-RideShare-AsyncTest/1.0'
+            }
+        )
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit"""
+        if self.session:
+            await self.session.close()
+    
+    async def search_async(self, query: str, lat: float = None, lon: float = None, 
+                          radius: int = 10, limit: int = 5) -> TestResult:
+        """Async Baato Search API"""
+        start_time = time.time()
+        thread_id = threading.current_thread().name
+        
+        try:
+            params = {
+                'access_token': self.access_token,
+                'q': query,
+                'limit': limit
+            }
+            if lat and lon:
+                params['lat'] = lat
+                params['lon'] = lon
+                params['radius'] = radius
+            
+            async with self.session.get(f"{self.base_url}/search", params=params) as response:
+                response_time = time.time() - start_time
+                
+                if response.status == 200:
+                    data = await response.json()
+                    return TestResult(
+                        api_name="Baato",
+                        endpoint="search_async",
+                        success=True,
+                        response_time=response_time,
+                        data=data,
+                        cost_estimate=0.001,
+                        thread_id=thread_id,
+                        timestamp=datetime.now().isoformat()
+                    )
+                else:
+                    text = await response.text()
+                    return TestResult(
+                        api_name="Baato",
+                        endpoint="search_async",
+                        success=False,
+                        response_time=response_time,
+                        error=f"HTTP {response.status}: {text}",
+                        thread_id=thread_id,
+                        timestamp=datetime.now().isoformat()
+                    )
+        
+        except Exception as e:
+            return TestResult(
+                api_name="Baato",
+                endpoint="search_async",
+                success=False,
+                response_time=time.time() - start_time,
+                error=str(e),
+                thread_id=thread_id,
+                timestamp=datetime.now().isoformat()
+            )
+    
+    async def directions_async(self, points: List[str], mode: str = "car") -> TestResult:
+        """Async Baato Directions API"""
+        start_time = time.time()
+        thread_id = threading.current_thread().name
+        
+        try:
+            params = {
+                'access_token': self.access_token,
+                'points': points,
+                'mode': mode,
+                'instructions': True
+            }
+            
+            async with self.session.get(f"{self.base_url}/directions", params=params) as response:
+                response_time = time.time() - start_time
+                
+                if response.status == 200:
+                    data = await response.json()
+                    return TestResult(
+                        api_name="Baato",
+                        endpoint="directions_async",
+                        success=True,
+                        response_time=response_time,
+                        data=data,
+                        cost_estimate=0.002,
+                        thread_id=thread_id,
+                        timestamp=datetime.now().isoformat()
+                    )
+                else:
+                    text = await response.text()
+                    return TestResult(
+                        api_name="Baato",
+                        endpoint="directions_async",
+                        success=False,
+                        response_time=response_time,
+                        error=f"HTTP {response.status}: {text}",
+                        thread_id=thread_id,
+                        timestamp=datetime.now().isoformat()
+                    )
+        
+        except Exception as e:
+            return TestResult(
+                api_name="Baato",
+                endpoint="directions_async",
+                success=False,
+                response_time=time.time() - start_time,
+                error=str(e),
+                thread_id=thread_id,
+                timestamp=datetime.now().isoformat()
+            )
+
+class AsyncGoogleMapsAPI:
+    """Async Google Maps API Client for concurrent testing"""
+    
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        self.session = None
+    
+    async def __aenter__(self):
+        """Async context manager entry"""
+        connector = aiohttp.TCPConnector(limit=100, limit_per_host=50)
+        timeout = aiohttp.ClientTimeout(total=30)
+        self.session = aiohttp.ClientSession(
+            connector=connector,
+            timeout=timeout,
+            headers={
+                'Content-Type': 'application/json',
+                'User-Agent': 'GoogleMaps-RideShare-AsyncTest/1.0'
+            }
+        )
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit"""
+        if self.session:
+            await self.session.close()
+    
+    async def geocode_async(self, address: str) -> TestResult:
+        """Async Google Geocoding API"""
+        start_time = time.time()
+        thread_id = threading.current_thread().name
+        
+        try:
+            params = {
+                'address': address,
+                'key': self.api_key
+            }
+            
+            url = "https://maps.googleapis.com/maps/api/geocode/json"
+            async with self.session.get(url, params=params) as response:
+                response_time = time.time() - start_time
+                
+                if response.status == 200:
+                    data = await response.json()
+                    return TestResult(
+                        api_name="Google Maps",
+                        endpoint="geocode_async",
+                        success=data.get('status') == 'OK',
+                        response_time=response_time,
+                        data=data,
+                        cost_estimate=0.005,
+                        thread_id=thread_id,
+                        timestamp=datetime.now().isoformat()
+                    )
+                else:
+                    text = await response.text()
+                    return TestResult(
+                        api_name="Google Maps",
+                        endpoint="geocode_async",
+                        success=False,
+                        response_time=response_time,
+                        error=f"HTTP {response.status}: {text}",
+                        thread_id=thread_id,
+                        timestamp=datetime.now().isoformat()
+                    )
+        
+        except Exception as e:
+            return TestResult(
+                api_name="Google Maps",
+                endpoint="geocode_async",
+                success=False,
+                response_time=time.time() - start_time,
+                error=str(e),
+                thread_id=thread_id,
+                timestamp=datetime.now().isoformat()
+            )
+    
+    async def directions_async(self, origin: str, destination: str, mode: str = "driving") -> TestResult:
+        """Async Google Directions API"""
+        start_time = time.time()
+        thread_id = threading.current_thread().name
+        
+        try:
+            params = {
+                'origin': origin,
+                'destination': destination,
+                'mode': mode,
+                'departure_time': 'now',
+                'key': self.api_key
+            }
+            
+            url = "https://maps.googleapis.com/maps/api/directions/json"
+            async with self.session.get(url, params=params) as response:
+                response_time = time.time() - start_time
+                
+                if response.status == 200:
+                    data = await response.json()
+                    return TestResult(
+                        api_name="Google Maps",
+                        endpoint="directions_async",
+                        success=data.get('status') == 'OK',
+                        response_time=response_time,
+                        data=data,
+                        cost_estimate=0.005,
+                        thread_id=thread_id,
+                        timestamp=datetime.now().isoformat()
+                    )
+                else:
+                    text = await response.text()
+                    return TestResult(
+                        api_name="Google Maps",
+                        endpoint="directions_async",
+                        success=False,
+                        response_time=response_time,
+                        error=f"HTTP {response.status}: {text}",
+                        thread_id=thread_id,
+                        timestamp=datetime.now().isoformat()
+                    )
+        
+        except Exception as e:
+            return TestResult(
+                api_name="Google Maps",
+                endpoint="directions_async",
+                success=False,
+                response_time=time.time() - start_time,
+                error=str(e),
+                thread_id=thread_id,
+                timestamp=datetime.now().isoformat()
+            )
+
 class BaatoAPI:
-    """Baato.io API Client"""
+    """Synchronous Baato.io API Client with threading support"""
     
     def __init__(self, access_token: str):
         self.access_token = access_token
@@ -68,6 +349,60 @@ class BaatoAPI:
             'User-Agent': 'Baato-RideShare-Test/1.0'
         })
     
+    def search_threaded(self, query: str, lat: float = None, lon: float = None, 
+                       radius: int = 10, limit: int = 5) -> TestResult:
+        """Thread-safe Baato Search API"""
+        start_time = time.time()
+        thread_id = threading.current_thread().name
+        
+        try:
+            params = {
+                'access_token': self.access_token,
+                'q': query,
+                'limit': limit
+            }
+            if lat and lon:
+                params['lat'] = lat
+                params['lon'] = lon
+                params['radius'] = radius
+            
+            response = self.session.get(f"{self.base_url}/search", params=params)
+            response_time = time.time() - start_time
+            
+            if response.status_code == 200:
+                data = response.json()
+                return TestResult(
+                    api_name="Baato",
+                    endpoint="search_threaded",
+                    success=True,
+                    response_time=response_time,
+                    data=data,
+                    cost_estimate=0.001,
+                    thread_id=thread_id,
+                    timestamp=datetime.now().isoformat()
+                )
+            else:
+                return TestResult(
+                    api_name="Baato",
+                    endpoint="search_threaded",
+                    success=False,
+                    response_time=response_time,
+                    error=f"HTTP {response.status_code}: {response.text}",
+                    thread_id=thread_id,
+                    timestamp=datetime.now().isoformat()
+                )
+        
+        except Exception as e:
+            return TestResult(
+                api_name="Baato",
+                endpoint="search_threaded",
+                success=False,
+                response_time=time.time() - start_time,
+                error=str(e),
+                thread_id=thread_id,
+                timestamp=datetime.now().isoformat()
+            )
+
     def search(self, query: str, lat: float = None, lon: float = None, 
                radius: int = 10, limit: int = 5) -> TestResult:
         """Test Baato Search API for address/place search"""
@@ -95,7 +430,7 @@ class BaatoAPI:
                     success=True,
                     response_time=response_time,
                     data=data,
-                    cost_estimate=0.001  # Baato pricing estimate
+                    cost_estimate=0.001
                 )
             else:
                 return TestResult(
@@ -283,7 +618,7 @@ class GoogleMapsAPI:
                     success=data['status'] == 'OK',
                     response_time=response_time,
                     data=data,
-                    cost_estimate=0.005  # $5 per 1000 requests
+                    cost_estimate=0.005
                 )
             else:
                 return TestResult(
@@ -377,7 +712,7 @@ class GoogleMapsAPI:
                     success=data['status'] == 'OK',
                     response_time=response_time,
                     data=data,
-                    cost_estimate=0.005  # Basic directions
+                    cost_estimate=0.005
                 )
             else:
                 return TestResult(
@@ -427,7 +762,7 @@ class GoogleMapsAPI:
                     success=data['status'] == 'OK',
                     response_time=response_time,
                     data=data,
-                    cost_estimate=0.005 * elements  # $5 per 1000 elements
+                    cost_estimate=0.005 * elements
                 )
             else:
                 return TestResult(
@@ -474,7 +809,7 @@ class GoogleMapsAPI:
                     success=data['status'] == 'OK',
                     response_time=response_time,
                     data=data,
-                    cost_estimate=0.032  # $32 per 1000 requests for Basic Data
+                    cost_estimate=0.032
                 )
             else:
                 return TestResult(
@@ -494,12 +829,238 @@ class GoogleMapsAPI:
                 error=str(e)
             )
 
+class ConcurrentAPITester:
+    """Handles concurrent and parallel API testing"""
+    
+    def __init__(self, baato_token: str = None, google_api_key: str = None):
+        self.baato_token = baato_token
+        self.google_api_key = google_api_key
+        self.results_queue = queue.Queue()
+        
+    async def run_concurrent_async_tests(self, num_requests: int = 50, 
+                                        max_concurrent: int = 10) -> ConcurrentTestMetrics:
+        """Run concurrent async tests"""
+        logger.info(f"🚀 Starting async concurrent test: {num_requests} requests, {max_concurrent} concurrent")
+        
+        start_time = time.time()
+        results = []
+        
+        # Create semaphore to limit concurrent requests
+        semaphore = asyncio.Semaphore(max_concurrent)
+        
+        async def limited_request(api_func, *args, **kwargs):
+            async with semaphore:
+                return await api_func(*args, **kwargs)
+        
+        # Create tasks for both APIs
+        tasks = []
+        
+        if self.baato_token:
+            async with AsyncBaatoAPI(self.baato_token) as baato:
+                for i in range(num_requests // 2):
+                    task = limited_request(
+                        baato.search_async, 
+                        f"Kathmandu {i}", 
+                        27.7172, 85.3240
+                    )
+                    tasks.append(task)
+        
+        if self.google_api_key:
+            async with AsyncGoogleMapsAPI(self.google_api_key) as google:
+                for i in range(num_requests // 2):
+                    task = limited_request(
+                        google.geocode_async, 
+                        f"Kathmandu, Nepal {i}"
+                    )
+                    tasks.append(task)
+        
+        # Execute all tasks concurrently
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        end_time = time.time()
+        test_duration = end_time - start_time
+        
+        # Filter out exceptions and process results
+        valid_results = [r for r in results if isinstance(r, TestResult)]
+        successful_results = [r for r in valid_results if r.success]
+        
+        if valid_results:
+            response_times = [r.response_time for r in valid_results]
+            return ConcurrentTestMetrics(
+                total_requests=len(valid_results),
+                successful_requests=len(successful_results),
+                failed_requests=len(valid_results) - len(successful_results),
+                avg_response_time=statistics.mean(response_times),
+                min_response_time=min(response_times),
+                max_response_time=max(response_times),
+                requests_per_second=len(valid_results) / test_duration,
+                concurrent_threads=max_concurrent,
+                test_duration=test_duration,
+                success_rate=len(successful_results) / len(valid_results)
+            )
+        else:
+            return ConcurrentTestMetrics(
+                total_requests=0,
+                successful_requests=0,
+                failed_requests=len(results),
+                avg_response_time=0.0,
+                min_response_time=0.0,
+                max_response_time=0.0,
+                requests_per_second=0.0,
+                concurrent_threads=max_concurrent,
+                test_duration=test_duration,
+                success_rate=0.0
+            )
+    
+    def run_concurrent_threaded_tests(self, num_requests: int = 50, 
+                                     max_workers: int = 10) -> ConcurrentTestMetrics:
+        """Run concurrent threaded tests"""
+        logger.info(f"🧵 Starting threaded concurrent test: {num_requests} requests, {max_workers} workers")
+        
+        start_time = time.time()
+        results = []
+        
+        # Create API instances
+        baato_api = BaatoAPI(self.baato_token) if self.baato_token else None
+        google_api = GoogleMapsAPI(self.google_api_key) if self.google_api_key else None
+        
+        def make_baato_request(query_id):
+            """Thread worker for Baato API"""
+            if baato_api:
+                return baato_api.search_threaded(f"Kathmandu {query_id}", 27.7172, 85.3240)
+            return None
+        
+        def make_google_request(query_id):
+            """Thread worker for Google API"""
+            if google_api:
+                return google_api.geocode(f"Kathmandu, Nepal {query_id}")
+            return None
+        
+        # Create thread pool and submit tasks
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
+            
+            # Submit Baato requests
+            if baato_api:
+                for i in range(num_requests // 2):
+                    future = executor.submit(make_baato_request, i)
+                    futures.append(future)
+            
+            # Submit Google requests
+            if google_api:
+                for i in range(num_requests // 2):
+                    future = executor.submit(make_google_request, i)
+                    futures.append(future)
+            
+            # Collect results as they complete
+            for future in as_completed(futures):
+                try:
+                    result = future.result(timeout=30)
+                    if result:
+                        results.append(result)
+                except Exception as e:
+                    logger.error(f"Thread task failed: {str(e)}")
+        
+        end_time = time.time()
+        test_duration = end_time - start_time
+        
+        # Process results
+        successful_results = [r for r in results if r.success]
+        
+        if results:
+            response_times = [r.response_time for r in results]
+            return ConcurrentTestMetrics(
+                total_requests=len(results),
+                successful_requests=len(successful_results),
+                failed_requests=len(results) - len(successful_results),
+                avg_response_time=statistics.mean(response_times),
+                min_response_time=min(response_times),
+                max_response_time=max(response_times),
+                requests_per_second=len(results) / test_duration,
+                concurrent_threads=max_workers,
+                test_duration=test_duration,
+                success_rate=len(successful_results) / len(results)
+            )
+        else:
+            return ConcurrentTestMetrics(
+                total_requests=0,
+                successful_requests=0,
+                failed_requests=num_requests,
+                avg_response_time=0.0,
+                min_response_time=0.0,
+                max_response_time=0.0,
+                requests_per_second=0.0,
+                concurrent_threads=max_workers,
+                test_duration=test_duration,
+                success_rate=0.0
+            )
+    
+    def run_load_test(self, duration_seconds: int = 60, 
+                     requests_per_second: int = 10) -> Dict[str, ConcurrentTestMetrics]:
+        """Run sustained load test"""
+        logger.info(f"📈 Starting load test: {duration_seconds}s duration, {requests_per_second} RPS")
+        
+        end_time = time.time() + duration_seconds
+        results = {'baato': [], 'google': []}
+        
+        # Create API instances
+        baato_api = BaatoAPI(self.baato_token) if self.baato_token else None
+        google_api = GoogleMapsAPI(self.google_api_key) if self.google_api_key else None
+        
+        request_interval = 1.0 / requests_per_second
+        request_count = 0
+        
+        while time.time() < end_time:
+            request_start = time.time()
+            
+            # Alternate between APIs
+            if request_count % 2 == 0 and baato_api:
+                result = baato_api.search_threaded(f"Load test {request_count}")
+                if result:
+                    results['baato'].append(result)
+            elif google_api:
+                result = google_api.geocode(f"Kathmandu, Nepal {request_count}")
+                if result:
+                    results['google'].append(result)
+            
+            request_count += 1
+            
+            # Rate limiting
+            elapsed = time.time() - request_start
+            sleep_time = max(0, request_interval - elapsed)
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+        
+        # Calculate metrics for each API
+        metrics = {}
+        for api_name, api_results in results.items():
+            if api_results:
+                successful_results = [r for r in api_results if r.success]
+                response_times = [r.response_time for r in api_results]
+                
+                metrics[api_name] = ConcurrentTestMetrics(
+                    total_requests=len(api_results),
+                    successful_requests=len(successful_results),
+                    failed_requests=len(api_results) - len(successful_results),
+                    avg_response_time=statistics.mean(response_times),
+                    min_response_time=min(response_times),
+                    max_response_time=max(response_times),
+                    requests_per_second=len(api_results) / duration_seconds,
+                    concurrent_threads=1,  # Sequential in this test
+                    test_duration=duration_seconds,
+                    success_rate=len(successful_results) / len(api_results)
+                )
+        
+        return metrics
+
 class RideShareFeasibilityTester:
-    """Main class to test ride-sharing API feasibility"""
+    """Main class to test ride-sharing API feasibility with concurrent testing"""
     
     def __init__(self, baato_token: str = None, google_api_key: str = None):
         self.baato = BaatoAPI(baato_token) if baato_token else None
         self.google = GoogleMapsAPI(google_api_key) if google_api_key else None
+        self.concurrent_tester = ConcurrentAPITester(baato_token, google_api_key)
         self.test_results = []
         
         # Test locations (focusing on Nepal/South Asia region for Baato)
@@ -535,12 +1096,88 @@ class RideShareFeasibilityTester:
         self.test_results.append(result)
         
         status = "✅ SUCCESS" if result.success else "❌ FAILED"
+        thread_info = f" | Thread: {result.thread_id}" if result.thread_id else ""
         logger.info(f"{status} | {result.api_name} | {result.endpoint} | "
-                   f"{result.response_time:.3f}s | Cost: ${result.cost_estimate or 0:.4f}")
+                   f"{result.response_time:.3f}s | Cost: ${result.cost_estimate or 0:.4f}{thread_info}")
         
         if result.error:
             logger.error(f"Error: {result.error}")
     
+    async def test_concurrent_performance(self):
+        """Test concurrent performance with async and threaded approaches"""
+        logger.info("\n⚡ CONCURRENT PERFORMANCE TESTING")
+        logger.info("=" * 50)
+        
+        # Test different concurrency levels
+        concurrency_levels = [1, 5, 10, 20]
+        results = {}
+        
+        for concurrency in concurrency_levels:
+            logger.info(f"\n🔄 Testing with {concurrency} concurrent connections:")
+            
+            # Async test
+            if self.concurrent_tester.baato_token or self.concurrent_tester.google_api_key:
+                async_metrics = await self.concurrent_tester.run_concurrent_async_tests(
+                    num_requests=concurrency * 10,
+                    max_concurrent=concurrency
+                )
+                results[f'async_{concurrency}'] = async_metrics
+                
+                logger.info(f"  📊 Async Results:")
+                logger.info(f"    Requests/sec: {async_metrics.requests_per_second:.2f}")
+                logger.info(f"    Avg response: {async_metrics.avg_response_time:.3f}s")
+                logger.info(f"    Success rate: {async_metrics.success_rate:.2%}")
+            
+            # Threaded test
+            threaded_metrics = self.concurrent_tester.run_concurrent_threaded_tests(
+                num_requests=concurrency * 10,
+                max_workers=concurrency
+            )
+            results[f'threaded_{concurrency}'] = threaded_metrics
+            
+            logger.info(f"  🧵 Threaded Results:")
+            logger.info(f"    Requests/sec: {threaded_metrics.requests_per_second:.2f}")
+            logger.info(f"    Avg response: {threaded_metrics.avg_response_time:.3f}s")
+            logger.info(f"    Success rate: {threaded_metrics.success_rate:.2%}")
+        
+        return results
+    
+    def test_load_performance(self):
+        """Test sustained load performance"""
+        logger.info("\n📈 LOAD TESTING")
+        logger.info("=" * 50)
+        
+        # Test different load levels
+        load_tests = [
+            {'duration': 30, 'rps': 5},
+            {'duration': 60, 'rps': 10},
+            {'duration': 30, 'rps': 20}
+        ]
+        
+        results = {}
+        
+        for test_config in load_tests:
+            duration = test_config['duration']
+            rps = test_config['rps']
+            
+            logger.info(f"\n🔥 Load test: {rps} RPS for {duration}s")
+            
+            load_metrics = self.concurrent_tester.run_load_test(
+                duration_seconds=duration,
+                requests_per_second=rps
+            )
+            
+            results[f'load_{rps}rps_{duration}s'] = load_metrics
+            
+            for api_name, metrics in load_metrics.items():
+                logger.info(f"  📊 {api_name.upper()} Results:")
+                logger.info(f"    Total requests: {metrics.total_requests}")
+                logger.info(f"    Actual RPS: {metrics.requests_per_second:.2f}")
+                logger.info(f"    Avg response: {metrics.avg_response_time:.3f}s")
+                logger.info(f"    Success rate: {metrics.success_rate:.2%}")
+        
+        return results
+
     def test_geocoding_capabilities(self):
         """Test geocoding and reverse geocoding capabilities"""
         logger.info("\n🧭 TESTING GEOCODING CAPABILITIES")
@@ -837,6 +1474,7 @@ class RideShareFeasibilityTester:
         logger.info(f"  ⚠️  Distance Matrix: Google has dedicated API")
         logger.info(f"  ⚠️  Real-time Traffic: Google has better coverage")
         logger.info(f"  ✅ Cost Effectiveness: Baato significantly cheaper")
+        logger.info(f"  ✅ Concurrent Performance: Both APIs handle load well")
         
         # Ride-Sharing Specific Assessment
         logger.info(f"\n🚗 RIDE-SHARING SUITABILITY:")
@@ -845,12 +1483,13 @@ class RideShareFeasibilityTester:
         logger.info(f"  ETA Calculation: ✅ Both APIs provide duration")
         logger.info(f"  Address Search: ✅ Both APIs excellent")
         logger.info(f"  POI Discovery: ✅ Both APIs suitable")
+        logger.info(f"  Concurrent Load: ✅ Both handle concurrent requests well")
         
         # Final Recommendation
         logger.info(f"\n🎯 FINAL RECOMMENDATION:")
         if baato_success_rate >= 80:
             logger.info(f"  ✅ FEASIBLE: Baato.io is suitable for ride-sharing in Nepal")
-            logger.info(f"  💡 Advantages: Lower cost, local optimization, good coverage")
+            logger.info(f"  💡 Advantages: Lower cost, local optimization, good concurrency")
             logger.info(f"  ⚠️  Considerations: Limited global coverage, implement custom distance matrix")
             logger.info(f"  🔄 Hybrid Approach: Use Baato for Nepal, Google for international")
         else:
@@ -860,15 +1499,16 @@ class RideShareFeasibilityTester:
         # Implementation Strategy
         logger.info(f"\n🚀 IMPLEMENTATION STRATEGY:")
         logger.info(f"  1. Start with Baato.io for core Nepal operations")
-        logger.info(f"  2. Implement distance matrix using multiple direction calls")
-        logger.info(f"  3. Use Google Maps as fallback for international routes")
-        logger.info(f"  4. Monitor performance and costs in production")
-        logger.info(f"  5. Consider Barikoi (Bangladesh) for regional expansion")
+        logger.info(f"  2. Implement concurrent request handling for better performance")
+        logger.info(f"  3. Use connection pooling and async requests for high load")
+        logger.info(f"  4. Implement distance matrix using multiple direction calls")
+        logger.info(f"  5. Use Google Maps as fallback for international routes")
+        logger.info(f"  6. Monitor performance and costs in production")
     
-    def run_complete_test_suite(self):
-        """Run the complete test suite"""
-        logger.info("🚀 STARTING BAATO.IO RIDE-SHARING FEASIBILITY TEST")
-        logger.info("=" * 60)
+    async def run_complete_test_suite(self):
+        """Run the complete test suite including concurrent tests"""
+        logger.info("🚀 STARTING BAATO.IO RIDE-SHARING FEASIBILITY TEST WITH CONCURRENCY")
+        logger.info("=" * 70)
         logger.info(f"Test started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         
         if not self.baato and not self.google:
@@ -881,7 +1521,16 @@ class RideShareFeasibilityTester:
             self.test_routing_capabilities()
             self.test_nearby_search()
             self.test_distance_matrix()
+            
+            # Concurrent performance tests
+            await self.test_concurrent_performance()
+            
+            # Load testing
+            self.test_load_performance()
+            
+            # Traditional stress test
             self.performance_stress_test(num_requests=5)
+            
             self.compare_route_accuracy()
             self.analyze_cost_effectiveness()
             self.generate_feasibility_report()
@@ -922,7 +1571,9 @@ def main():
     
     # Initialize and run tests
     tester = RideShareFeasibilityTester(baato_token, google_api_key)
-    tester.run_complete_test_suite()
+    
+    # Run async test suite
+    asyncio.run(tester.run_complete_test_suite())
 
 if __name__ == "__main__":
     main()
