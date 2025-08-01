@@ -1,0 +1,60 @@
+{
+  "api_keys": {
+    "baato": "YOUR_BAATO_API_KEY_HERE",
+    "google": "YOUR_GOOGLE_MAPS_API_KEY_HERE"
+  },
+  "test_settings": {
+    "timeout": 30,
+    "max_retries": 3,
+    "concurrent_requests": 10,
+    "test_iterations": 5
+  },
+  "test_locations": {
+    "kathmandu": {
+      "name": "Kathmandu, Nepal",
+      "coordinates": [27.7172, 85.3240],
+      "description": "Capital city of Nepal"
+    },
+    "pokhara": {
+      "name": "Pokhara, Nepal", 
+      "coordinates": [28.2096, 83.9856],
+      "description": "Tourist city in Nepal"
+    },
+    "lalitpur": {
+      "name": "Lalitpur, Nepal",
+      "coordinates": [27.6767, 85.3167],
+      "description": "City adjacent to Kathmandu"
+    },
+    "bhaktapur": {
+      "name": "Bhaktapur, Nepal",
+      "coordinates": [27.6722, 85.4298],
+      "description": "Historic city near Kathmandu"
+    }
+  },
+  "ride_sharing_scenarios": [
+    {
+      "name": "Short city ride",
+      "origin": [27.7172, 85.3240],
+      "destination": [27.6767, 85.3167],
+      "description": "Kathmandu to Lalitpur"
+    },
+    {
+      "name": "Medium distance ride",
+      "origin": [27.7172, 85.3240], 
+      "destination": [27.6722, 85.4298],
+      "description": "Kathmandu to Bhaktapur"
+    },
+    {
+      "name": "Long distance ride",
+      "origin": [27.7172, 85.3240],
+      "destination": [28.2096, 83.9856],
+      "description": "Kathmandu to Pokhara"
+    }
+  ],
+  "evaluation_criteria": {
+    "performance_weight": 0.3,
+    "accuracy_weight": 0.25,
+    "features_weight": 0.25,
+    "cost_weight": 0.2
+  }
+}
